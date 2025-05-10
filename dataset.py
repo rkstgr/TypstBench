@@ -179,19 +179,6 @@ if __name__ == "__main__":
     # Example usage
     dataset = TypstBenchDataset()
 
-    # Print all sample IDs
-    print("Sample IDs:")
-    for sample in dataset.samples:
-        print(f"  - {sample.id}")
-
-    # Get basic samples
-    basic_samples = dataset.filter_samples(tier="basic")
-    print(f"\nFound {len(basic_samples)} basic samples")
-
-    # Get samples with math features
-    math_samples = dataset.filter_samples(features=["math"])
-    print(f"\nFound {len(math_samples)} samples with math features")
-
     # Get a specific sample
     if dataset.samples:
         sample = dataset.samples[0]
