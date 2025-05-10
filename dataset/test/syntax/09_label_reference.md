@@ -5,8 +5,9 @@ task_type: conversion
 features: ["labels", "references"]
 difficulty: 1
 ---
-Create a heading called "Methods" with a label, then create text that references this heading.
+Create a numbered heading called "Methods" with a label, then create text that references this heading.
 ---
+#set heading(numbering: "1.")
 = Methods <methods>
 
-As described in @methods, we used a mixed-methods approach.
+As described in @methods

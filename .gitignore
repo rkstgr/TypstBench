@@ -3,3 +3,4 @@
 .ropeproject/
 results/*
 __pycache__
+renders/*
