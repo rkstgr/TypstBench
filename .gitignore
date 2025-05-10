@@ -4,3 +4,4 @@
 results/*
 __pycache__
 renders/*
+.DS_Store
