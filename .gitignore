@@ -5,3 +5,5 @@ results/*
 __pycache__
 renders/*
 .DS_Store
+pdf_artifacts/
+.vscode/

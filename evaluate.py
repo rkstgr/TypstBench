@@ -1,12 +1,148 @@
 import os
 import json
+from pathlib import Path
+import shutil
 import time
 import argparse
 import asyncio
+import hashlib
 from typing import Dict, List, Any, Optional, Tuple
+import uuid
 import litellm
 from litellm.types.utils import ModelResponse, Choices
 from dataset import TypstBenchDataset, TypstBenchSample
+from render import TypstRenderResult, TypstRenderer
+
+class EvaluateResult:
+    """Result of evaluating a model's output against a target output."""
+
+    def __init__(self,
+                 model_render_result: TypstRenderResult,
+                 target_render_result: Optional[TypstRenderResult] = None,
+                 is_correct: bool = False,
+                 error_message: Optional[str] = None,
+                 comparison_method: str = "none"):
+        """
+        Initialize the evaluation result.
+
+        Args:
+            model_render_result: Result of rendering the model's output
+            target_render_result: Result of rendering the target output
+            is_correct: Whether the model output matches the target output
+            error_message: Error message if something went wrong
+            comparison_method: Method used for comparison
+        """
+        self.model_render_result = model_render_result
+        self.target_render_result = target_render_result
+        self.is_correct = is_correct
+        self.error_message = error_message
+        self.comparison_method = comparison_method
+
+    def __str__(self) -> str:
+        if self.is_correct:
+            return f"Correct (compared using {self.comparison_method})"
+        elif self.error_message:
+            return f"Evaluation error: {self.error_message}"
+        else:
+            return f"Incorrect (compared using {self.comparison_method})"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary format."""
+        return {
+            "is_correct": self.is_correct,
+            "comparison_method": self.comparison_method,
+            "error_message": self.error_message,
+            "model_compile_success": self.model_render_result.success if self.model_render_result else False,
+            "target_compile_success": self.target_render_result.success if self.target_render_result else False,
+            "model_errors": [str(e) for e in self.model_render_result.errors] if self.model_render_result and self.model_render_result.errors else []
+        }
+
+    def cleanup(self) -> None:
+        """Clean up any temporary files created during evaluation."""
+        if self.model_render_result:
+            self.model_render_result.cleanup()
+        if self.target_render_result:
+            self.target_render_result.cleanup()
+
+
+def calculate_file_md5(filepath: str) -> Optional[str]:
+    """Calculate MD5 hash of a file."""
+    if not os.path.exists(filepath):
+        return None
+
+    hash_md5 = hashlib.md5()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
+def evaluate_output(model_output: str, 
+                   target_output: str,
+                   renderer: Optional[TypstRenderer] = None,
+                   save_dir: Optional[str] = None,
+                   sample_id: Optional[str] = None) -> EvaluateResult:
+    """
+    Evaluates if model_output and target_output match.
+    Saves PDFs to save_dir if specified for later inspection.
+    """
+    if not renderer:
+        renderer = TypstRenderer()
+    
+    # Generate unique identifier for this evaluation
+    eval_id = sample_id or str(uuid.uuid4())[:8]
+    
+    # Create persistent paths if save_dir is provided
+    persistent_paths = {}
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        persistent_paths = {
+            'model': os.path.join(save_dir, f"{eval_id}_model.pdf"),
+            'target': os.path.join(save_dir, f"{eval_id}_target.pdf")
+        }
+    
+    # Render model output
+    model_render_result = renderer.render(model_output, pdf_path=persistent_paths["model"])
+    if not model_render_result.success:
+        return EvaluateResult(
+            model_render_result=model_render_result,
+            is_correct=False,
+            comparison_method="compile_check"
+        )
+    
+    # Render target output
+    target_render_result = renderer.render(target_output, pdf_path=persistent_paths["target"])
+    if not target_render_result.success:
+        return EvaluateResult(
+            model_render_result=model_render_result,
+            target_render_result=target_render_result,
+            is_correct=False,
+            error_message="Target output failed to render - dataset error",
+            comparison_method="compile_check"
+        )
+    # Compare PDF hashes (using original paths for comparison)
+    model_hash = calculate_file_md5(model_render_result.pdf_path)
+    target_hash = calculate_file_md5(target_render_result.pdf_path)
+    
+    if not model_hash or not target_hash:
+        return EvaluateResult(
+            model_render_result=model_render_result,
+            target_render_result=target_render_result,
+            is_correct=False,
+            error_message="Failed to calculate PDF hash",
+            comparison_method="pdf_hash"
+        )
+    
+    # Compare hashes
+    is_correct = model_hash == target_hash
+    
+    return EvaluateResult(
+        model_render_result=model_render_result,
+        target_render_result=target_render_result,
+        is_correct=is_correct,
+        comparison_method="pdf_hash"
+    )
+
 
 class TypstBenchEvaluator:
     """Evaluates LLM performance on the TypstBench dataset."""
@@ -17,6 +153,7 @@ class TypstBenchEvaluator:
         model: str,
         api_key: Optional[str] = None,
         output_dir: str = "results",
+        artifacts_dir: str = "pdf_artifacts",
         prompt_template: str = "Convert this description to Typst code:\n\n{input}\n\nTypst code:"
     ):
         """
@@ -33,6 +170,7 @@ class TypstBenchEvaluator:
         self.model = model
         self.output_dir = output_dir
         self.prompt_template = prompt_template
+        self.artifacts_dir = artifacts_dir
 
         # Set up API key if provided
         if api_key:
@@ -46,6 +184,7 @@ class TypstBenchEvaluator:
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(artifacts_dir, exist_ok=True)
 
     def _format_prompt(self, sample: TypstBenchSample) -> str:
         """Format the prompt for a sample using the prompt template."""
@@ -78,20 +217,28 @@ class TypstBenchEvaluator:
             content = response.choices[0].message.content
             assert content
 
-            completion_text = content.strip()
-
-            # Perform exact string matching evaluation
-            is_correct = completion_text == sample.raw_output
+            model_output = content.strip()
+            
+            sample_artifacts_dir = Path(sample.get_path("pdf_artifacts")).parent.absolute()
+            eval_result = evaluate_output(
+                model_output, 
+                sample.raw_output,
+                save_dir=sample_artifacts_dir,
+                sample_id=sample.id
+            )
 
             result = {
                 "sample_id": sample.id,
                 "prompt": prompt,
                 "expected_output": sample.raw_output,
-                "model_output": completion_text,
-                "is_correct": is_correct,
+                "model_output": model_output,
+                "is_correct": eval_result.is_correct,
                 "latency_seconds": time.time() - start_time,
                 "model": self.model,
                 "metadata": sample.metadata,
+                "eval_result": eval_result.to_dict(),
+                "model_pdf_path": getattr(eval_result.model_render_result, "persistent_pdf_path", None),
+                "target_pdf_path": getattr(eval_result.target_render_result, "persistent_pdf_path", None),
             }
 
             return result

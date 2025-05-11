@@ -27,18 +27,18 @@ class TypstRenderResult:
         success: bool,
         pdf_path: Optional[str] = None,
         errors: Optional[List[TypstError]] = None,
-        temp_dir: Optional[str] = None,
         typst_file: Optional[str] = None,
         output: Optional[str] = None,
         error_output: Optional[str] = None,
+        persistent_pdf_path: Optional[str] = None,
     ):
         self.success = success
         self.pdf_path = pdf_path
         self.errors = errors or []
-        self.temp_dir = temp_dir
         self.typst_file = typst_file
         self.output = output
         self.error_output = error_output
+        self.persistent_pdf_path = persistent_pdf_path
 
     def __str__(self) -> str:
         if self.success:
@@ -63,7 +63,7 @@ class TypstRenderer:
             typst_command: Command to invoke the Typst CLI
         """
         self.typst_command = typst_command
-        self._check_typst_installation()
+        # self._check_typst_installation()
 
     def _check_typst_installation(self) -> None:
         """Check if Typst is installed and accessible."""
@@ -175,8 +175,8 @@ class TypstRenderer:
     def render(
         self,
         typst_code: str,
-        output_dir: Optional[str] = None,
-        filename_prefix: str = "typst_render",
+        typ_path: Optional[str]=None,
+        pdf_path: Optional[str]=None
     ) -> TypstRenderResult:
         """
         Render Typst code to PDF.
@@ -190,27 +190,21 @@ class TypstRenderer:
             TypstRenderResult with render results
         """
         # Create a temporary directory for the output if not specified
-        temp_dir_obj = None
-        if not output_dir:
-            temp_dir_obj = tempfile.TemporaryDirectory(prefix="typst_render_")
-            output_dir = temp_dir_obj.name
+        if not typ_path:
+            typ_temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".typ")
+            typ_path = typ_temp_file.name
 
-        temp_dir = output_dir
-        os.makedirs(temp_dir, exist_ok=True)
-
-        # Generate unique filenames
-        unique_id = uuid.uuid4().hex[:8]
-        typst_file = os.path.join(temp_dir, f"{filename_prefix}_{unique_id}.typ")
-        pdf_file = os.path.join(temp_dir, f"{filename_prefix}_{unique_id}.pdf")
+        if not pdf_path:
+            pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
 
         # Write Typst code to file
-        with open(typst_file, "w", encoding="utf-8") as f:
+        with open(typ_path, "w", encoding="utf-8") as f:
             f.write(typst_code)
 
         # Run Typst compiler
         try:
             process = subprocess.run(
-                [self.typst_command, "compile", typst_file, pdf_file],
+                [self.typst_command, "compile", typ_path, pdf_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -221,9 +215,8 @@ class TypstRenderer:
             if success:
                 return TypstRenderResult(
                     success=True,
-                    pdf_path=pdf_file,
-                    temp_dir=temp_dir,
-                    typst_file=typst_file,
+                    pdf_path=pdf_path,
+                    typst_file=typ_path,
                     output=process.stdout,
                     error_output=process.stderr,
                 )
@@ -234,8 +227,7 @@ class TypstRenderer:
                 return TypstRenderResult(
                     success=False,
                     errors=errors,
-                    temp_dir=temp_dir,
-                    typst_file=typst_file,
+                    typst_file=typ_path,
                     output=process.stdout,
                     error_output=process.stderr,
                 )
@@ -244,10 +236,9 @@ class TypstRenderer:
             return TypstRenderResult(
                 success=False,
                 errors=[TypstError(line=0, column=0, message=str(e))],
-                temp_dir=temp_dir,
-                typst_file=typst_file,
+                typst_file=typ_path,
             )
-
+    
     def render_sample(
         self, sample_output: str, output_dir: Optional[str] = None
     ) -> TypstRenderResult:

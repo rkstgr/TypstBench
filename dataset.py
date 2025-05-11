@@ -32,6 +32,39 @@ class TypstBenchSample:
             "raw_output": self.raw_output,
             "file_path": self.file_path
         }
+    
+    def get_path(self, root=None, suffix=None):
+        """
+        Manipulate the file path by optionally changing the root directory and/or file suffix.
+        
+        Args:
+            root: New root directory to replace the current one (if provided)
+            suffix: New file suffix to replace the current one (if provided)
+            
+        Returns:
+            Modified file path
+        """
+        # Split path into parts
+        path_parts = self.file_path.split(os.sep)
+        
+        # Replace root if specified
+        if root:
+            path_parts[0] = root
+        
+        # Replace suffix if specified
+        if suffix and len(path_parts) > 0:
+            filename = path_parts[-1]
+            # Find the last dot to replace the extension
+            last_dot = filename.rfind('.')
+            if last_dot != -1:
+                # Replace existing suffix
+                path_parts[-1] = filename[:last_dot] + suffix
+            else:
+                # No existing suffix, just append
+                path_parts[-1] = filename + suffix
+        
+        # Join path parts back into a path
+        return os.path.join(*path_parts)
 
 
 class TypstBenchDataset:
