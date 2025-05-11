@@ -85,7 +85,7 @@ class DatasetRenderer:
 
         # Save Typst code to file
         with open(typ_path, "w", encoding="utf-8") as f:
-            f.write(sample.raw_output)
+            f.write(sample.get_typst_code())
 
         # Render with Typst
         result = self.renderer.render_file(typst_file=typ_path, pdf_file=pdf_path)

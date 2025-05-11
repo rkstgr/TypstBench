@@ -222,7 +222,7 @@ class TypstBenchEvaluator:
             sample_artifacts_dir = Path(sample.get_path("pdf_artifacts")).parent.absolute()
             eval_result = evaluate_output(
                 model_output, 
-                sample.raw_output,
+                sample.raw_ground_truth,
                 save_dir=sample_artifacts_dir,
                 sample_id=sample.id
             )
@@ -230,7 +230,7 @@ class TypstBenchEvaluator:
             result = {
                 "sample_id": sample.id,
                 "prompt": prompt,
-                "expected_output": sample.raw_output,
+                "expected_output": sample.raw_ground_truth,
                 "model_output": model_output,
                 "is_correct": eval_result.is_correct,
                 "latency_seconds": time.time() - start_time,
@@ -247,7 +247,7 @@ class TypstBenchEvaluator:
             return {
                 "sample_id": sample.id,
                 "prompt": prompt,
-                "expected_output": sample.raw_output,
+                "expected_output": sample.raw_ground_truth,
                 "model_output": None,
                 "is_correct": False,
                 "error": str(e),

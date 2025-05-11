@@ -12,12 +12,12 @@ class TypstBenchSample:
                  id: str,
                  metadata: Dict[str, Any],
                  raw_input: str,
-                 raw_output: str,
+                 raw_ground_truth: str,
                  file_path: Optional[str] = None):
         self.id = id
         self.metadata = metadata
         self.raw_input = raw_input
-        self.raw_output = raw_output
+        self.raw_ground_truth = raw_ground_truth
         self.file_path = file_path
 
     def __repr__(self) -> str:
@@ -29,9 +29,54 @@ class TypstBenchSample:
             "id": self.id,
             "metadata": self.metadata,
             "raw_input": self.raw_input,
-            "raw_output": self.raw_output,
+            "raw_output": self.raw_ground_truth,
             "file_path": self.file_path
         }
+    
+    def get_typst_code(self) -> Optional[str]:
+        """
+        Extract Typst code from a markdown-style code block.
+        
+        From raw text that contains:
+        ```typst
+        <returns this part>
+        ```
+        
+        Args:
+            raw_text: The raw text containing potential code blocks
+            
+        Returns:
+            The extracted Typst code or None if no valid code block is found
+        """
+        if not self.raw_ground_truth:
+            return None
+        
+        # Pattern to match code blocks with various fences and language specifiers
+        patterns = [
+            # Standard markdown with explicit typst language tag
+            r'```(?:typst|typ)\s*\n([\s\S]*?)\n```',
+            
+            # Alternative backtick count (3 or more)
+            r'````(?:typst|typ)?\s*\n([\s\S]*?)\n````',
+            r'`````(?:typst|typ)?\s*\n([\s\S]*?)\n`````',
+            
+            # Code blocks without language specification
+            r'```\s*\n([\s\S]*?)\n```',
+            
+            # Fallback to the whole text if no code block found
+            r'^([\s\S]*)$'
+        ]
+        
+        # Try each pattern in order of preference
+        for pattern in patterns:
+            import re
+            matches = re.findall(pattern, self.raw_ground_truth)
+            if matches:
+                # Return the first match
+                return matches[0].strip()
+        
+        # If no matches were found with any pattern
+        return None
     
     def get_path(self, root=None, suffix=None):
         """
@@ -121,7 +166,7 @@ class TypstBenchDataset:
                 id=sample_id,
                 metadata=frontmatter,
                 raw_input=raw_input,
-                raw_output=raw_output,
+                raw_ground_truth=raw_output,
                 file_path=file_path
             )
 
