@@ -7,6 +7,8 @@ difficulty: 1
 ---
 Create a bullet list with three items: "First item", "Second item", and "Third item".
 ---
+```typst
 - First item
 - Second item
 - Third item
+```

@@ -7,4 +7,6 @@ difficulty: 1
 ---
 Create a block-level mathematical equation showing "E = mc²".
 ---
+```typst
 $ E = m c^2 $
+```

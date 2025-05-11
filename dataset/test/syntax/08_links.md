@@ -5,6 +5,8 @@ task_type: conversion
 features: ["links", "urls"]
 difficulty: 1
 ---
-Create Typst code that includes a link to the Typst website (https://typst.app/).
+Create a link to the website (https://typst.app/) with "See typst.app" as body.
 ---
-Visit our website at https://typst.app/ for more information.
+```typst
+#link("https://typst.app/")[See typst.app]
+```
