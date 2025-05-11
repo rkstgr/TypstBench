@@ -46,11 +46,6 @@ class TypstRenderResult:
         else:
             return f"Render failed with {len(self.errors)} errors"
 
-    def cleanup(self) -> None:
-        """Remove temporary files created during rendering."""
-        if self.temp_dir and os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
-
 
 class TypstRenderer:
     """Renders Typst code to PDF using the Typst CLI."""
@@ -146,7 +141,6 @@ class TypstRenderer:
                 return TypstRenderResult(
                     success=True,
                     pdf_path=pdf_file,
-                    temp_dir=None,
                     typst_file=typst_file,
                     output=process.stdout,
                     error_output=process.stderr,
@@ -158,7 +152,6 @@ class TypstRenderer:
                 return TypstRenderResult(
                     success=False,
                     errors=errors,
-                    temp_dir=None,
                     typst_file=typst_file,
                     output=process.stdout,
                     error_output=process.stderr,
@@ -168,7 +161,6 @@ class TypstRenderer:
             return TypstRenderResult(
                 success=False,
                 errors=[TypstError(line=0, column=0, message=str(e))],
-                temp_dir=None,
                 typst_file=typst_file,
             )
 

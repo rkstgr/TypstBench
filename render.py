@@ -94,9 +94,6 @@ class DatasetRenderer:
         if not self.keep_typ_files and os.path.exists(typ_path):
             os.remove(typ_path)
 
-        # Clean up temporary files
-        result.cleanup()
-
         return {
             "sample_id": sample.id,
             "success": result.success,
