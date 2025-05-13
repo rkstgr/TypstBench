@@ -1,12 +1,18 @@
+from dataclasses import dataclass
 import json
 import os
 import glob
 import yaml
 import re
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
+from tqdm import tqdm
+from typst import TypstRenderer, get_typst_code
 
-from typst import get_typst_code
-
+@dataclass
+class VerifyResult:
+    IGNORED = 0
+    SUCCESS = 1
+    FAILURE = 2
 
 class TypstBenchSample:
     """Represents a single sample from the TypstBench dataset."""
@@ -16,12 +22,15 @@ class TypstBenchSample:
                  metadata: Dict[str, Any],
                  raw_input: str,
                  raw_ground_truth: str,
-                 file_path: Optional[str] = None):
+                 file_path: Optional[str] = None,
+                 ignore_verify: bool = False
+                 ):
         self.category = category
         self.metadata = metadata
         self.raw_input = raw_input
         self.raw_ground_truth = raw_ground_truth
         self.file_path = file_path
+        self.ignore_verify = ignore_verify
 
     def __repr__(self) -> str:
         return f"TypstBenchSample({self.file_path})"
@@ -72,9 +81,27 @@ class TypstBenchSample:
         # Join path parts back into a path
         return os.path.join(*path_parts)
 
+    def verify(self, renderer: Optional[TypstRenderer] = None) -> Tuple[int, Optional[str]]:
+        if self.ignore_verify:
+            return VerifyResult.IGNORED, None
+        
+        if renderer is None:
+            renderer = TypstRenderer()
+        
+        render_result = renderer.render(get_typst_code(self.raw_ground_truth))
+        os.remove(render_result.typst_file)
+        os.remove(render_result.pdf_path)
+        if render_result.success:    
+            return VerifyResult.SUCCESS, None
+        else:
+            return VerifyResult.FAILURE, render_result.error_output
+        
+
+        
 
 class TypstBenchDataset:
     """Loader for the TypstBench dataset."""
+    samples: List[TypstBenchSample]
 
     def __init__(self, base_dir: str = "dataset"):
         """
@@ -84,7 +111,7 @@ class TypstBenchDataset:
             base_dir: Base directory containing the dataset files
         """
         self.base_dir = base_dir
-        self.samples = []
+        self.samples: list[TypstBenchSample] = []
         self._load_dataset()
 
     def _parse_sample_file(self, file_path: str) -> Optional[TypstBenchSample]:
@@ -97,9 +124,14 @@ class TypstBenchDataset:
         Returns:
             A TypstBenchSample object or None if parsing fails
         """
-        try:
-            category = os.path.basename(os.path.dirname(file_path))
+        category = os.path.basename(os.path.dirname(file_path))
+        category_ignore_file = os.path.join(os.path.dirname(file_path), ".ignore-verify")
 
+        ignore_verify = False
+        if os.path.exists(category_ignore_file):
+            ignore_verify = True
+
+        try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
@@ -120,12 +152,15 @@ class TypstBenchDataset:
             raw_input = parts[1].strip()
             raw_ground_truth = parts[2].strip()
 
+            ignore_verify = metadata.get("ignore_verify", ignore_verify)
+
             return TypstBenchSample(
                 category=category,
                 metadata=metadata,
                 raw_input=raw_input,
                 raw_ground_truth=raw_ground_truth,
-                file_path=file_path
+                file_path=file_path,
+                ignore_verify=ignore_verify
             )
 
         except Exception as e:
@@ -219,6 +254,23 @@ class TypstBenchDataset:
         return DatasetStats(root_dir=self.base_dir,
                             total_tasks=total_tasks, categories=categories, features=features)
 
+    def verify(self, renderer: Optional[TypstRenderer] = None) -> List[Tuple[str, int, Optional[str]]]:
+        """
+        Verify all samples in the dataset.
+
+        Args:
+            renderer: Optional TypstRenderer instance for rendering
+
+        Returns:
+            List of tuples with sample ID, verification result, and error message (if any)
+        """
+        results = []
+        progress_bar = tqdm(self.samples, desc="Verifying samples", unit="sample")
+        for sample in progress_bar:
+            result, error = sample.verify(renderer)
+            results.append((sample.file_path, result, error))
+        return results
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert the entire dataset to a dictionary format."""
         return {
@@ -309,9 +361,30 @@ def main():
         stats = dataset.get_stats()
         stats.print_stats()
     elif args.command == "verify":
-        # Placeholder for dataset verification logic
-        print("Dataset verification is not implemented yet.")
-        raise NotImplementedError("Dataset verification is not implemented yet.")
+        dataset = TypstBenchDataset()
+        results = dataset.verify()
+
+        """ Print verification results 
+        Ignored: number
+        Success: number
+        Failure: number
+
+        Failures:
+          ...
+        """
+        ignored_count = sum(1 for _, result, _ in results if result == VerifyResult.IGNORED)
+        success_count = sum(1 for _, result, _ in results if result == VerifyResult.SUCCESS)
+        failure_count = sum(1 for _, result, _ in results if result == VerifyResult.FAILURE)
+        print(f"Ignored: {ignored_count}")
+        print(f"Success: {success_count}")
+        print(f"Failure: {failure_count}")
+        if failure_count == 0:
+            return
+        
+        print("\nFailures:")
+        for result in [res for res in results if res[1] == VerifyResult.FAILURE]:
+            print(f"{result[0]}: {result[2]}")
+
 
 if __name__ == "__main__":
     """
