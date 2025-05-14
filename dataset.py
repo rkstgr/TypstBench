@@ -204,14 +204,12 @@ class TypstBenchDataset:
         filtered = self.samples
 
         for key, value in kwargs.items():
-            if key == 'id':
-                filtered = [s for s in filtered if s.id == value]
+            if key == 'task_number':
+                filtered = [s for s in filtered if s.file_path.split("/")[-1].startswith(value)]
+            elif key == 'category':
+                filtered = [s for s in filtered if s.category == value]
             elif key == 'tier':
                 filtered = [s for s in filtered if s.metadata.get('tier') == value]
-            elif key == 'difficulty':
-                filtered = [s for s in filtered if s.metadata.get('difficulty') == value]
-            elif key == 'task_type':
-                filtered = [s for s in filtered if s.metadata.get('task_type') == value]
             elif key == 'features':
                 if isinstance(value, list):
                     # Check if any of the requested features are in the sample's features
@@ -349,8 +347,20 @@ def main():
     )
     parser.add_argument(
         "command",
-        choices=["stats", "verify"],
-        help="Command to execute: 'stats' for statistics, 'verify' for dataset verification"
+        choices=["stats", "verify", "render"],
+        help="Command to execute: 'stats' for statistics, 'verify' for dataset verification, 'render' for rendering samples"
+    )
+    parser.add_argument(
+        "task_identifier",
+        type=str,
+        nargs="?",
+        metavar="category/task_number",
+        help="Sample ID to render (e.g., 'category/task_number')"
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Render all samples in the dataset (only applicable for the 'render' command)"
     )
 
     args = parser.parse_args()
@@ -364,14 +374,6 @@ def main():
         dataset = TypstBenchDataset()
         results = dataset.verify()
 
-        """ Print verification results 
-        Ignored: number
-        Success: number
-        Failure: number
-
-        Failures:
-          ...
-        """
         ignored_count = sum(1 for _, result, _ in results if result == VerifyResult.IGNORED)
         success_count = sum(1 for _, result, _ in results if result == VerifyResult.SUCCESS)
         failure_count = sum(1 for _, result, _ in results if result == VerifyResult.FAILURE)
@@ -384,12 +386,43 @@ def main():
         print("\nFailures:")
         for result in [res for res in results if res[1] == VerifyResult.FAILURE]:
             print(f"{result[0]}: {result[2]}")
+    elif args.command == "render":
+        dataset = TypstBenchDataset()
+        renderer = TypstRenderer()
+        output_dir = "renders"
+        os.makedirs(output_dir, exist_ok=True)
 
+        if args.all:
+            samples = dataset.get_all_samples()
+        elif args.task_identifier:
+            category, task_number = args.task_identifier.split("/")
+            samples = dataset.filter_samples(category=category, task_number=task_number)
+        else:
+            print("Error: You must specify either a task identifier or use the --all flag.")
+            return
+
+        for sample in samples:
+            if sample.ignore_verify and not args.all:
+                print(f"Skipping {sample.file_path} due to ignore_verify flag.")
+                continue
+
+            output_path = os.path.join(output_dir, f"{sample.category}/{sample.file_path.split('/')[-1].split('.')[0]}.pdf")
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            result = renderer.render(sample.get_typst_code(), pdf_path=output_path)
+            if not result.success:
+                print(f"Error rendering {sample.file_path}: {result.error_output}")
+                continue
+
+            print(f"Rendered {sample.file_path} to {output_path}")
 
 if __name__ == "__main__":
     """
     Usage:
         dataset.py stats   - Display dataset statistics
         dataset.py verify  - Verify dataset integrity
+
+        dataset.py render <category>/<sample_id> - Render a specific sample
+        dataset.py render --all - Render all samples in the dataset
     """
     main()
