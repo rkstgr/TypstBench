@@ -10,8 +10,9 @@ from typing import Dict, List, Any, Optional, Tuple
 import uuid
 import litellm
 from litellm.types.utils import ModelResponse, Choices
-from dataset import TypstBenchDataset, TypstBenchSample
+from dataset import EvaluationMethod, TypstBenchDataset, TypstBenchSample
 from render import TypstRenderResult, TypstRenderer
+from typst import get_typst_code
 
 class EvaluateResult:
     """Result of evaluating a model's output against a target output."""
@@ -81,7 +82,7 @@ def evaluate_output(model_output: str,
                    target_output: str,
                    renderer: Optional[TypstRenderer] = None,
                    save_dir: Optional[str] = None,
-                   sample_id: Optional[str] = None) -> EvaluateResult:
+                   task_path: Optional[str] = None) -> EvaluateResult:
     """
     Evaluates if model_output and target_output match.
     Saves PDFs to save_dir if specified for later inspection.
@@ -90,7 +91,7 @@ def evaluate_output(model_output: str,
         renderer = TypstRenderer()
     
     # Generate unique identifier for this evaluation
-    eval_id = sample_id or str(uuid.uuid4())[:8]
+    eval_id = task_path or str(uuid.uuid4())[:8]
     
     # Create persistent paths if save_dir is provided
     persistent_paths = {}
@@ -102,7 +103,7 @@ def evaluate_output(model_output: str,
         }
     
     # Render model output
-    model_render_result = renderer.render(model_output, pdf_path=persistent_paths["model"])
+    model_render_result = renderer.render(get_typst_code(model_output), pdf_path=persistent_paths["model"])
     if not model_render_result.success:
         return EvaluateResult(
             model_render_result=model_render_result,
@@ -111,7 +112,7 @@ def evaluate_output(model_output: str,
         )
     
     # Render target output
-    target_render_result = renderer.render(target_output, pdf_path=persistent_paths["target"])
+    target_render_result = renderer.render(get_typst_code(target_output), pdf_path=persistent_paths["target"])
     if not target_render_result.success:
         return EvaluateResult(
             model_render_result=model_render_result,
@@ -154,7 +155,8 @@ class TypstBenchEvaluator:
         api_key: Optional[str] = None,
         output_dir: str = "results",
         artifacts_dir: str = "pdf_artifacts",
-        prompt_template: str = "Convert this description to Typst code:\n\n{input}\n\nTypst code:"
+        prompt_template: str = "{input}",
+        max_concurrent_requests: int = 5
     ):
         """
         Initialize the evaluator.
@@ -171,6 +173,7 @@ class TypstBenchEvaluator:
         self.output_dir = output_dir
         self.prompt_template = prompt_template
         self.artifacts_dir = artifacts_dir
+        self.semaphore = asyncio.Semaphore(max_concurrent_requests)
 
         # Set up API key if provided
         if api_key:
@@ -200,61 +203,84 @@ class TypstBenchEvaluator:
         Returns:
             A dictionary with evaluation results
         """
-        prompt = self._format_prompt(sample)
-        start_time = time.time()
+        async with self.semaphore:
+            prompt = self._format_prompt(sample)
+            start_time = time.time()
 
-        try:
-            response = await litellm.acompletion(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,  # Low temperature for more consistent outputs
-                max_tokens=1024,
-            )
+            try:
+                response = await litellm.acompletion(
+                    model=self.model,
+                    messages=[
+                        {
+                        "role": "system", "content": """
+You are an helpful AI for the typst markdown. Always return typst code and wrap it into ```typst\n\n``` code blocks. 
+Respond concisely and follow the user prompt. 
 
-            assert isinstance(response, ModelResponse)
-            assert isinstance(response.choices[0], Choices)
+For multiple choice questions answer with the single letter option (A, B, C, D) without any explanation.
+Just return the letter option, like this: 'A'.
+If multiple options are correct, seperate them with commas, like this: 'A,B,C'.
+"""
+                        },
+                        {
+                            "role": "user", "content": prompt
+                        }],
+                    temperature=0.1,  # Low temperature for more consistent outputs
+                    max_tokens=1024,
+                )
 
-            content = response.choices[0].message.content
-            assert content
+                assert isinstance(response, ModelResponse)
+                assert isinstance(response.choices[0], Choices)
 
-            model_output = content.strip()
-            
-            sample_artifacts_dir = Path(sample.get_path("pdf_artifacts")).parent.absolute()
-            eval_result = evaluate_output(
-                model_output, 
-                sample.raw_ground_truth,
-                save_dir=sample_artifacts_dir,
-                sample_id=sample.id
-            )
+                content = response.choices[0].message.content
+                assert content
 
-            result = {
-                "sample_id": sample.id,
-                "prompt": prompt,
-                "expected_output": sample.raw_ground_truth,
-                "model_output": model_output,
-                "is_correct": eval_result.is_correct,
-                "latency_seconds": time.time() - start_time,
-                "model": self.model,
-                "metadata": sample.metadata,
-                "eval_result": eval_result.to_dict(),
-                "model_pdf_path": getattr(eval_result.model_render_result, "persistent_pdf_path", None),
-                "target_pdf_path": getattr(eval_result.target_render_result, "persistent_pdf_path", None),
-            }
+                model_output = content.strip()
+                
+                if sample.evaluation_method == EvaluationMethod.PDF_HASH:
+                    sample_artifacts_dir = Path(sample.get_path("pdf_artifacts")).parent.absolute()
+                    eval_result = evaluate_output(
+                        model_output, 
+                        sample.raw_ground_truth,
+                        save_dir=sample_artifacts_dir,
+                        task_path=sample.file_path
+                    )
+                else:
+                    is_correct = model_output == sample.raw_ground_truth
+                    eval_result = EvaluateResult(
+                        model_render_result=None,
+                        target_render_result=None,
+                        is_correct=is_correct,
+                        comparison_method="string_match"
+                    )
 
-            return result
+                result = {
+                    "task": sample.file_path,
+                    "prompt": prompt,
+                    "expected_output": sample.raw_ground_truth,
+                    "model_output": model_output,
+                    "is_correct": eval_result.is_correct,
+                    "latency_seconds": time.time() - start_time,
+                    "model": self.model,
+                    "metadata": sample.metadata,
+                    "eval_result": eval_result.to_dict(),
+                    "model_pdf_path": getattr(eval_result.model_render_result, "persistent_pdf_path", None),
+                    "target_pdf_path": getattr(eval_result.target_render_result, "persistent_pdf_path", None),
+                }
 
-        except Exception as e:
-            return {
-                "sample_id": sample.id,
-                "prompt": prompt,
-                "expected_output": sample.raw_ground_truth,
-                "model_output": None,
-                "is_correct": False,
-                "error": str(e),
-                "latency_seconds": time.time() - start_time,
-                "model": self.model,
-                "metadata": sample.metadata,
-            }
+                return result
+
+            except Exception as e:
+                return {
+                    "task": sample.file_path,
+                    "prompt": prompt,
+                    "expected_output": sample.raw_ground_truth,
+                    "model_output": None,
+                    "is_correct": False,
+                    "error": str(e),
+                    "latency_seconds": time.time() - start_time,
+                    "model": self.model,
+                    "metadata": sample.metadata,
+                }
 
     async def evaluate_samples(self, samples: List[TypstBenchSample]) -> List[Dict[str, Any]]:
         """
@@ -410,11 +436,12 @@ async def main():
     parser.add_argument("--api-key", help="API key for the model provider")
     parser.add_argument("--dataset-dir", default="dataset", help="Directory containing the dataset")
     parser.add_argument("--output-dir", default="results", help="Directory to save results")
+    parser.add_argument("--category", help="Filter samples by category (e.g., 'multiple_choice')")
     parser.add_argument("--tier", help="Filter samples by tier (e.g., 'basic')")
     parser.add_argument("--features", help="Filter samples by features (comma-separated)")
-    parser.add_argument("--difficulty", type=int, help="Filter samples by difficulty level")
-    parser.add_argument("--task-type", help="Filter samples by task type")
     parser.add_argument("--max-samples", type=int, help="Maximum number of samples to evaluate")
+    parser.add_argument("--concurrency", type=int, default=5, help="Maximum concurrent requests")
+    
 
     args = parser.parse_args()
 
@@ -423,21 +450,20 @@ async def main():
 
     # Prepare filter arguments
     filter_kwargs = {}
+    if args.category:
+        filter_kwargs["category"] = args.category
     if args.tier:
         filter_kwargs["tier"] = args.tier
     if args.features:
         filter_kwargs["features"] = args.features.split(",")
-    if args.difficulty is not None:
-        filter_kwargs["difficulty"] = args.difficulty
-    if args.task_type:
-        filter_kwargs["task_type"] = args.task_type
 
     # Initialize evaluator
     evaluator = TypstBenchEvaluator(
         dataset=dataset,
         model=args.model,
         api_key=args.api_key,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        max_concurrent_requests=args.concurrency,
     )
 
     # Run evaluation
