@@ -1,18 +1,20 @@
 # TypstBench
 
-Benchmark dataset to evaluate LLM performance to write typst markdown
+LLM evaluation suite for Typst.
 
-## Dataset statistics
+TypstBench is a dataset containing tasks and question around Typst, a modern typesetting language. It serves as a significant reference point for evaluating and enhancing LLMs' proficiency in Typst Markdown generation.
+
+## Statistics
 
 1. Get statistics of the dataset
 ```sh
 python dataset.py stats
 ```
 
-### Verify samples
+## Verify
 
 This renders all task solutions using typst, ensuring the solutions are syntactically correct.
-Note: Some tasks are ignored, either by having a `.ignore-verify` in their category directory (like all multiple-choice tasks), or if the flag `ignore-verify = true` is set in the frontmatter of the task definition.
+Note: Some tasks are ignored, either by having a `.ignore-verify` in their category directory (like 'multiple-choice'), or if the flag `ignore-verify = true` is set in the frontmatter of the task definition.
 ```sh
 python dataset.py verify
 ```
