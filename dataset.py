@@ -8,11 +8,15 @@ from typing import Dict, List, Any, Optional, Tuple
 from tqdm import tqdm
 from typst import TypstRenderer, get_typst_code
 
-@dataclass
+
 class VerifyResult:
     IGNORED = 0
     SUCCESS = 1
     FAILURE = 2
+
+class EvaluationMethod:
+    PDF_HASH = "pdf_hash"
+    STRING_MATCH = "string_match"
 
 class TypstBenchSample:
     """Represents a single sample from the TypstBench dataset."""
@@ -23,7 +27,8 @@ class TypstBenchSample:
                  raw_input: str,
                  raw_ground_truth: str,
                  file_path: Optional[str] = None,
-                 ignore_verify: bool = False
+                 ignore_verify: bool = False,
+                 evaluation_method: str = EvaluationMethod.PDF_HASH
                  ):
         self.category = category
         self.metadata = metadata
@@ -31,6 +36,7 @@ class TypstBenchSample:
         self.raw_ground_truth = raw_ground_truth
         self.file_path = file_path
         self.ignore_verify = ignore_verify
+        self.evaluation_method = evaluation_method
 
     def __repr__(self) -> str:
         return f"TypstBenchSample({self.file_path})"
@@ -154,13 +160,18 @@ class TypstBenchDataset:
 
             ignore_verify = metadata.get("ignore_verify", ignore_verify)
 
+            evaluation_method = EvaluationMethod.PDF_HASH
+            if category == "multiple_choice":
+                evaluation_method = EvaluationMethod.STRING_MATCH
+
             return TypstBenchSample(
                 category=category,
                 metadata=metadata,
                 raw_input=raw_input,
                 raw_ground_truth=raw_ground_truth,
                 file_path=file_path,
-                ignore_verify=ignore_verify
+                ignore_verify=ignore_verify,
+                evaluation_method=evaluation_method
             )
 
         except Exception as e:
