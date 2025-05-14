@@ -1,23 +1,36 @@
 # TypstBench
 
-
 Benchmark dataset to evaluate LLM performance to write typst markdown
+
+## Dataset statistics
 
 1. Get statistics of the dataset
 ```sh
-python dataset.py
+python dataset.py stats
 ```
 
-2. Render dataset samples to pdf to inspect
+### Verify samples
+
+This renders all task solutions using typst, ensuring the solutions are syntactically correct.
+Note: Some tasks are ignored, either by having a `.ignore-verify` in their category directory (like all multiple-choice tasks), or if the flag `ignore-verify = true` is set in the frontmatter of the task definition.
 ```sh
-# render all
-python render.py
-
-# Keep the typ source files
-python render.py --keep-typ
+python dataset.py verify
 ```
 
-2. Evaluate an external model using LiteLLM
+## Render
+
+Render dataset samples to pdf to inspect
+```sh
+# render a specific task
+python dataset.py render generate/001
+
+# render all tasks (that are not filtered out)
+python dataset.py render --all
+```
+
+## Evaluate
+
+Evaluate an external model using LiteLLM against all samples. I would advise creating a local .envrc file containing the API keys to the LLM providers.
 ```sh
 # Basic usage with OpenAI GPT-3.5
 python evaluate.py --model gpt-3.5-turbo --api-key your_openai_key
@@ -27,4 +40,7 @@ python evaluate.py --model anthropic/claude-3-opus-20240229 --api-key your_anthr
 
 # Evaluate only math-related samples with a maximum of 5 samples
 python evaluate.py --model gpt-4 --features math --max-samples 5
+
+# Reduce the concurrency
+python evaluate.py --model anthropic/claude-3-5-haiku-20241022 --concurrency 2
 ```
