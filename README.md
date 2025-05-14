@@ -2,7 +2,7 @@
 
 LLM evaluation suite for Typst.
 
-TypstBench is a dataset containing tasks and question around Typst, a modern typesetting language. It serves as a significant reference point for evaluating and enhancing LLMs' proficiency in Typst Markdown generation.
+TypstBench is a dataset containing tasks and question around Typst, a modern typesetting language. It serves as a reference point for evaluating and enhancing LLMs' proficiency in Typst generation.
 
 ## Statistics
 

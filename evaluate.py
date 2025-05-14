@@ -1,7 +1,6 @@
 import os
 import json
 from pathlib import Path
-import shutil
 import time
 import argparse
 import asyncio
@@ -155,7 +154,7 @@ class TypstBenchEvaluator:
         api_key: Optional[str] = None,
         output_dir: str = "results",
         artifacts_dir: str = "pdf_artifacts",
-        prompt_template: str = "{input}",
+        prompt_template: str = "Task type: {task_type}\nTask:\n{input}",
         max_concurrent_requests: int = 5
     ):
         """
@@ -191,7 +190,7 @@ class TypstBenchEvaluator:
 
     def _format_prompt(self, sample: TypstBenchSample) -> str:
         """Format the prompt for a sample using the prompt template."""
-        return self.prompt_template.format(input=sample.raw_input)
+        return self.prompt_template.format(task_type=sample.category, input=sample.raw_input)
 
     async def _evaluate_sample(self, sample: TypstBenchSample) -> Dict[str, Any]:
         """
@@ -213,12 +212,25 @@ class TypstBenchEvaluator:
                     messages=[
                         {
                         "role": "system", "content": """
-You are an helpful AI for the typst markdown. Always return typst code and wrap it into ```typst\n\n``` code blocks. 
-Respond concisely and follow the user prompt. 
+This is the TypstBench evaluation system. You are being tested on your ability to generate typst code and knowledge of typst.
+You are given two types of tasks:
 
-For multiple choice questions answer with the single letter option (A, B, C, D) without any explanation.
-Just return the letter option, like this: 'A'.
-If multiple options are correct, seperate them with commas, like this: 'A,B,C'.
+- generate: Generate typst code based on the input.
+Your answer should be a single typst code block.
+Example answer:
+```typst
+<typst code here>
+```
+
+- multiple_choice: Choose the correct answer from the options provided.
+There will alwyas be four options: A, B, C, D, and either one or two of them will be correct.
+If only one is correct, answer with the letter of the correct option.
+Example answer:
+A
+
+If two are correct, answer with the letters of the correct options separated by a comma.
+Example answer:
+A,B
 """
                         },
                         {
