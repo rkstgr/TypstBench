@@ -453,6 +453,7 @@ async def main():
     parser.add_argument("--features", help="Filter samples by features (comma-separated)")
     parser.add_argument("--max-samples", type=int, help="Maximum number of samples to evaluate")
     parser.add_argument("--concurrency", type=int, default=5, help="Maximum concurrent requests")
+    parser.add_argument("--task", help="Path to a specific task to evaluate")
     
 
     args = parser.parse_args()
@@ -468,6 +469,12 @@ async def main():
         filter_kwargs["tier"] = args.tier
     if args.features:
         filter_kwargs["features"] = args.features.split(",")
+    if args.task:
+        category, task_number = args.task.split("/")
+        filter_kwargs["category"] = category
+        filter_kwargs["task_number"] = task_number
+
+    
 
     # Initialize evaluator
     evaluator = TypstBenchEvaluator(
