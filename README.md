@@ -4,16 +4,16 @@ LLM evaluation suite for Typst.
 
 TypstBench is a dataset containing tasks and question around Typst, a modern typesetting language. It serves as a reference point for evaluating and enhancing LLMs' proficiency in Typst generation.
 
-## Preliminary Findings
+## Preliminary Findings (46 tasks)
 
-| Model                  | Accuracy   |
-|------------------------|------------|
-| Gemini 2.5 Pro         | 65.22%     |
-| Claude 3.7 Sonnt       | 60.87%     |
-| Claude 4.5 Haiku       | 56.52%     |
-| Gemini 2.5 Flash       | 56.52%     |
-| GPT-4.1                | 21.74%     |
-| GPT-4.1-Mini           | 8.70%      |
+| Model                          |   Accuracy |
+|--------------------------------|------------|
+| Claude 3.7 Sonnet              |    43.48%  |
+| Gemini 2.5 Pro                 |    41.30%  |
+| Gemini 2.5 Flash               |    32.61%  |
+| Claude 3.5 Haiku               |    30.43%  |
+| GPT-4.1                        |    15.22%  |
+| GPT-4.1-Mini                   |     4.35%  |
 
 ## Statistics
 
