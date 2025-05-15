@@ -10,7 +10,7 @@ import uuid
 import litellm
 from litellm.types.utils import ModelResponse, Choices
 from dataset import EvaluationMethod, TypstBenchDataset, TypstBenchSample
-from render import TypstRenderResult, TypstRenderer
+from typst import TypstRenderResult, TypstRenderer
 from typst import get_typst_code
 
 class EvaluateResult:
