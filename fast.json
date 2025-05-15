@@ -1,0 +1,7 @@
+{
+    "models": [
+        "gemini/gemini-2.5-flash-preview-04-17",
+        "openai/gpt-4.1-mini",
+        "anthropic/claude-3-5-haiku-20241022"
+    ]
+}
