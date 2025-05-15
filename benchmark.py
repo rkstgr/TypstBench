@@ -113,7 +113,7 @@ class BenchmarkRunner:
         
         for model, accuracy in sorted_results:
             model_name = self.format_model_name(model)
-            print("| {:<30} | {:>9.2%} |".format(model_name, accuracy))
+            print("| {:<30} | {:>10.2%} |".format(model_name, accuracy))
         print()
     
     async def run_benchmark(self, max_samples: int = None, **filter_kwargs):
