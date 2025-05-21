@@ -16,16 +16,19 @@ brew install ghostscript
 brew install typst
 ```
 
-## Preliminary Findings (46 tasks)
+## Preliminary Findings
 
 | Model                          |   Accuracy |
 |--------------------------------|------------|
-| Claude 3.7 Sonnet              |    43.48%  |
-| Gemini 2.5 Pro                 |    41.30%  |
-| Gemini 2.5 Flash               |    32.61%  |
-| Claude 3.5 Haiku               |    30.43%  |
-| GPT-4.1                        |    15.22%  |
-| GPT-4.1-Mini                   |     4.35%  |
+| Claude 3.7 Sonnet              |     43.48% |
+| Gemini 2.5 Pro                 |     36.96% |
+| Gemini 2.5 Flash               |     34.78% |
+| Claude 3.5 Haiku               |     30.43% |
+| GPT-4.1                        |     19.57% |
+| GPT-4.1-Mini                   |      4.35% |
+
+- 46 tasks
+- image_similarity
 
 ## Statistics
 
