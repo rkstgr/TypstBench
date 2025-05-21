@@ -4,6 +4,18 @@ LLM evaluation suite for Typst.
 
 TypstBench is a dataset containing tasks and question around Typst, a modern typesetting language. It serves as a reference point for evaluating and enhancing LLMs' proficiency in Typst generation.
 
+External Dependencies:
+- imagemagick
+```sh
+brew install imagemagick
+brew install ghostscript
+```
+
+- typst
+```sh
+brew install typst
+```
+
 ## Preliminary Findings (46 tasks)
 
 | Model                          |   Accuracy |

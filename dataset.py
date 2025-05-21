@@ -177,7 +177,7 @@ class TypstBenchDataset:
                 comparison_method = ComparisonMethod.STRING_MATCH
             else:
                 # Default for other categories if not specified
-                comparison_method = ComparisonMethod.PDF_HASH
+                comparison_method = ComparisonMethod.IMAGE_SIMILARITY
 
 
             return TypstBenchSample(

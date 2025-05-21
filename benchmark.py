@@ -142,7 +142,7 @@ class BenchmarkRunner:
                 model_dirname = model.replace("/", "-").replace(":", "-")
                 model_dir = Path(benchmark_dir) / "models" / model_dirname
                 model_dir.mkdir(parents=True, exist_ok=True)
-                model_results_path = model_dir / f"{model_dirname}.json"
+                model_results_path = model_dir / "results.json"
 
                 # Create evaluator for this model with custom output directory
                 evaluator = TypstBenchEvaluator(
