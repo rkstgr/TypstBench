@@ -136,14 +136,20 @@ class BenchmarkRunner:
         
         for i, model in enumerate(models, 1):
             print(f"\n[{i}/{len(models)}] Evaluating {self.format_model_name(model)}...")
-            
+
             try:
+
+                model_dirname = model.replace("/", "-").replace(":", "-")
+                model_dir = Path(benchmark_dir) / "models" / model_dirname
+                model_dir.mkdir(parents=True, exist_ok=True)
+                model_results_path = model_dir / f"{model_dirname}.json"
+
                 # Create evaluator for this model with custom output directory
                 evaluator = TypstBenchEvaluator(
                     dataset=dataset,
                     model=model,
-                    output_dir=benchmark_dir,
-                    max_concurrent_requests=3
+                    max_concurrent_requests=3,
+                    artifacts_dir=str(model_dir),
                 )
                 
                 # Prepare filter kwargs for this evaluation
@@ -151,22 +157,19 @@ class BenchmarkRunner:
                 
                 # Run evaluation
                 start_time = time.time()
-                result_file = await evaluator.run_evaluation(
+                results = await evaluator.run_evaluation(
                     filter_kwargs=eval_filter_kwargs,
                     max_samples=max_samples
                 )
-                
-                # Move and rename the result file
-                original_path = Path(result_file)
-                model_filename = model.replace("/", "-").replace(":", "-") + ".json"
-                new_path = Path(benchmark_dir) / model_filename
-                
-                if original_path != new_path:
-                    original_path.rename(new_path)
+
+                with open(model_results_path, 'w') as f:
+                    json.dump(results, f, indent=2)
+
+                print(f"✓ Results saved to {model_results_path}")
                 
                 # Extract accuracy
-                accuracy = self.extract_accuracy_from_result(str(new_path))
-                self.results[model] = accuracy
+                accuracy = self.extract_accuracy_from_result(str(model_results_path))
+                self.results[model] = results.get('summary', {}).get('overall_accuracy', 0.0)
                 
                 elapsed = time.time() - start_time
                 print(f"✓ Completed in {elapsed:.1f}s - Accuracy: {accuracy:.2%}")
