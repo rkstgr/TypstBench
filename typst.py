@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import shutil
 import re
-from typing import Optional, NamedTuple, List
+from typing import Optional, NamedTuple, List, TypedDict
 import uuid
 
 def get_typst_code(raw_input: str) -> Optional[str]:
@@ -63,32 +63,15 @@ class TypstError(NamedTuple):
         return f"Line {self.line}, Column {self.column}: {self.message}"
 
 
-class TypstRenderResult:
-    """Represents the result of a Typst rendering operation."""
+class TypstRenderResult(TypedDict):
+    """Result of a Typst rendering process."""
 
-    def __init__(
-        self,
-        success: bool,
-        pdf_path: Optional[str] = None,
-        errors: Optional[List[TypstError]] = None,
-        typst_file: Optional[str] = None,
-        output: Optional[str] = None,
-        error_output: Optional[str] = None,
-        persistent_pdf_path: Optional[str] = None,
-    ):
-        self.success = success
-        self.pdf_path = pdf_path
-        self.errors = errors or []
-        self.typst_file = typst_file
-        self.output = output
-        self.error_output = error_output
-        self.persistent_pdf_path = persistent_pdf_path
-
-    def __str__(self) -> str:
-        if self.success:
-            return f"Render successful: {self.pdf_path}"
-        else:
-            return f"Render failed with {len(self.errors)} errors"
+    success: bool
+    pdf_path: Optional[str]
+    typst_file: Optional[str]
+    output: Optional[str]
+    error_output: Optional[str]
+    errors: Optional[List[TypstError]] = None
 
 
 class TypstRenderer:
@@ -263,6 +246,9 @@ class TypstRenderer:
                 # Parse errors from output
                 errors = self._parse_errors(process.stderr)
 
+                if os.path.exists(pdf_path):
+                    os.remove(pdf_path)
+
                 return TypstRenderResult(
                     success=False,
                     errors=errors,
@@ -272,6 +258,9 @@ class TypstRenderer:
                 )
 
         except Exception as e:
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+
             return TypstRenderResult(
                 success=False,
                 errors=[TypstError(line=0, column=0, message=str(e))],

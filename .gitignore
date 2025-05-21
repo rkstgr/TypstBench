@@ -7,3 +7,5 @@ renders/*
 .DS_Store
 pdf_artifacts/
 .vscode/
+.cache/
+evaluation_results

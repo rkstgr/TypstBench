@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import json
 import os
 import glob
@@ -14,7 +13,7 @@ class VerifyResult:
     SUCCESS = 1
     FAILURE = 2
 
-class EvaluationMethod:
+class ComparisonMethod:
     PDF_HASH = "pdf_hash"
     STRING_MATCH = "string_match"
 
@@ -28,7 +27,7 @@ class TypstBenchSample:
                  raw_ground_truth: str,
                  file_path: Optional[str] = None,
                  ignore_verify: bool = False,
-                 evaluation_method: str = EvaluationMethod.PDF_HASH
+                 comparison_method: ComparisonMethod = ComparisonMethod.PDF_HASH
                  ):
         self.category = category
         self.metadata = metadata
@@ -36,10 +35,21 @@ class TypstBenchSample:
         self.raw_ground_truth = raw_ground_truth
         self.file_path = file_path
         self.ignore_verify = ignore_verify
-        self.evaluation_method = evaluation_method
+        self.evaluation_method = comparison_method
 
     def __repr__(self) -> str:
         return f"TypstBenchSample({self.file_path})"
+    
+    @property
+    def task_number(self) -> str:
+        """Extract task number from the file path."""
+        if self.file_path:
+            # Extract the task number from the file name
+            filename = os.path.basename(self.file_path)
+            # Remove the file extension
+            task_number = filename.split('.')[0]
+            return task_number
+        return ""
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert sample to dictionary format."""
@@ -160,9 +170,9 @@ class TypstBenchDataset:
 
             ignore_verify = metadata.get("ignore_verify", ignore_verify)
 
-            evaluation_method = EvaluationMethod.PDF_HASH
+            evaluation_method = ComparisonMethod.PDF_HASH
             if category == "multiple_choice":
-                evaluation_method = EvaluationMethod.STRING_MATCH
+                evaluation_method = ComparisonMethod.STRING_MATCH
 
             return TypstBenchSample(
                 category=category,
@@ -171,7 +181,7 @@ class TypstBenchDataset:
                 raw_ground_truth=raw_ground_truth,
                 file_path=file_path,
                 ignore_verify=ignore_verify,
-                evaluation_method=evaluation_method
+                comparison_method=evaluation_method
             )
 
         except Exception as e:

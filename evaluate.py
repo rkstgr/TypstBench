@@ -5,64 +5,43 @@ import time
 import argparse
 import asyncio
 import hashlib
-from typing import Dict, List, Any, Optional, Tuple
-import uuid
+from typing import Dict, List, Any, Optional, TypedDict
 import litellm
 from litellm.types.utils import ModelResponse, Choices
-from dataset import EvaluationMethod, TypstBenchDataset, TypstBenchSample
-from typst import TypstRenderResult, TypstRenderer
-from typst import get_typst_code
+from dataset import ComparisonMethod, TypstBenchDataset, TypstBenchSample
+from typst import TypstRenderer, get_typst_code
 
-class EvaluateResult:
-    """Result of evaluating a model's output against a target output."""
+class EvaluateTaskResult(TypedDict):
+    task: str
+    prompt: str
+    expected_output: str
+    model_output: str
+    is_correct: bool
+    latency_seconds: float
+    model: str
+    metadata: Dict[str, Any]
+    comparison_result: Dict[str, Any]
 
-    def __init__(self,
-                 model_render_result: TypstRenderResult,
-                 target_render_result: Optional[TypstRenderResult] = None,
-                 is_correct: bool = False,
-                 error_message: Optional[str] = None,
-                 comparison_method: str = "none"):
-        """
-        Initialize the evaluation result.
+class EvaluationRunSummary(TypedDict):
+    model: str
+    total_samples: int
+    correct_samples: int
+    overall_accuracy: float
+    average_latency_seconds: float
+    tier_metrics: Dict[str, Dict[str, Any]]
+    feature_metrics: Dict[str, Dict[str, Any]]
+    timestamp: str
+    system_prompt: str
+    temperature: float
 
-        Args:
-            model_render_result: Result of rendering the model's output
-            target_render_result: Result of rendering the target output
-            is_correct: Whether the model output matches the target output
-            error_message: Error message if something went wrong
-            comparison_method: Method used for comparison
-        """
-        self.model_render_result = model_render_result
-        self.target_render_result = target_render_result
-        self.is_correct = is_correct
-        self.error_message = error_message
-        self.comparison_method = comparison_method
+class EvaluationRunResults(TypedDict):
+    summary: EvaluationRunSummary
+    results_per_task: List[EvaluateTaskResult]
 
-    def __str__(self) -> str:
-        if self.is_correct:
-            return f"Correct (compared using {self.comparison_method})"
-        elif self.error_message:
-            return f"Evaluation error: {self.error_message}"
-        else:
-            return f"Incorrect (compared using {self.comparison_method})"
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary format."""
-        return {
-            "is_correct": self.is_correct,
-            "comparison_method": self.comparison_method,
-            "error_message": self.error_message,
-            "model_compile_success": self.model_render_result.success if self.model_render_result else False,
-            "target_compile_success": self.target_render_result.success if self.target_render_result else False,
-            "model_errors": [str(e) for e in self.model_render_result.errors] if self.model_render_result and self.model_render_result.errors else []
-        }
-
-    def cleanup(self) -> None:
-        """Clean up any temporary files created during evaluation."""
-        if self.model_render_result:
-            self.model_render_result.cleanup()
-        if self.target_render_result:
-            self.target_render_result.cleanup()
+class ComparisonResult(TypedDict):
+    is_correct: bool
+    error_message: Optional[str]
+    comparison_method: str
 
 
 def calculate_file_md5(filepath: str) -> Optional[str]:
@@ -77,71 +56,79 @@ def calculate_file_md5(filepath: str) -> Optional[str]:
     return hash_md5.hexdigest()
 
 
-def evaluate_output(model_output: str, 
-                   target_output: str,
-                   renderer: Optional[TypstRenderer] = None,
-                   save_dir: Optional[str] = None,
-                   task_path: Optional[str] = None) -> EvaluateResult:
-    """
-    Evaluates if model_output and target_output match.
-    Saves PDFs to save_dir if specified for later inspection.
-    """
-    if not renderer:
-        renderer = TypstRenderer()
-    
-    # Generate unique identifier for this evaluation
-    eval_id = task_path or str(uuid.uuid4())[:8]
-    
-    # Create persistent paths if save_dir is provided
-    persistent_paths = {}
-    if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        persistent_paths = {
-            'model': os.path.join(save_dir, f"{eval_id}_model.pdf"),
-            'target': os.path.join(save_dir, f"{eval_id}_target.pdf")
-        }
-    
-    # Render model output
-    model_render_result = renderer.render(get_typst_code(model_output), pdf_path=persistent_paths["model"])
-    if not model_render_result.success:
-        return EvaluateResult(
-            model_render_result=model_render_result,
-            is_correct=False,
-            comparison_method="compile_check"
+def compare_outputs(model_output: str,
+                    target_output: str,
+                    comparison_method: ComparisonMethod,
+                    debug_artificts_dir: Optional[Path] = None
+                    ) -> ComparisonResult:
+    if comparison_method == ComparisonMethod.STRING_MATCH:
+        is_correct = model_output.strip() == target_output.strip()
+        return ComparisonResult(
+            is_correct=is_correct,
+            error_message=None,
+            comparison_method="string_match"
         )
     
-    # Render target output
-    target_render_result = renderer.render(get_typst_code(target_output), pdf_path=persistent_paths["target"])
-    if not target_render_result.success:
-        return EvaluateResult(
-            model_render_result=model_render_result,
-            target_render_result=target_render_result,
-            is_correct=False,
-            error_message="Target output failed to render - dataset error",
-            comparison_method="compile_check"
-        )
-    # Compare PDF hashes (using original paths for comparison)
-    model_hash = calculate_file_md5(model_render_result.pdf_path)
-    target_hash = calculate_file_md5(target_render_result.pdf_path)
-    
-    if not model_hash or not target_hash:
-        return EvaluateResult(
-            model_render_result=model_render_result,
-            target_render_result=target_render_result,
-            is_correct=False,
-            error_message="Failed to calculate PDF hash",
+    elif comparison_method == ComparisonMethod.PDF_HASH:
+        model_typst_code = get_typst_code(model_output)
+        if not model_typst_code:
+            return ComparisonResult(
+                is_correct=False,
+                error_message="Model output is not valid Typst code",
+                comparison_method="compile_check"
+            )
+        model_render_result = TypstRenderer().render(model_typst_code)
+        if not model_render_result["success"]:
+            return ComparisonResult(
+                is_correct=False,
+                error_message=model_render_result["error_output"],
+                comparison_method="compile_check"
+            )
+        target_typst_code = get_typst_code(target_output)
+        if not target_typst_code:
+            return ComparisonResult(
+                is_correct=False,
+                error_message="Target output is not valid Typst code",
+                comparison_method="compile_check"
+            )
+        target_render_result = TypstRenderer().render(target_typst_code)
+        if not target_render_result["success"]:
+            return ComparisonResult(
+                is_correct=False,
+                error_message="Target output failed to render - dataset error: " + target_render_result["error_output"],
+                comparison_method="compile_check"
+            )
+
+        model_hash = calculate_file_md5(model_render_result["pdf_path"])
+        target_hash = calculate_file_md5(target_render_result["pdf_path"])
+        if not model_hash or not target_hash:
+            return ComparisonResult(
+                is_correct=False,
+                error_message="Failed to calculate PDF hash",
+                comparison_method="pdf_hash"
+            )
+        
+        is_correct = model_hash == target_hash
+        if not is_correct and debug_artificts_dir:
+            pdf_path = Path(model_render_result["pdf_path"])
+            os.makedirs(debug_artificts_dir, exist_ok=True)
+            pdf_path.rename(debug_artificts_dir / "model.pdf")
+
+            return ComparisonResult(
+                is_correct=False,
+                error_message="PDF hashes do not match. Model output saved to: " + str(debug_artificts_dir / "model.pdf"),
+                comparison_method="pdf_hash"
+            )
+            
+
+        return ComparisonResult(
+            is_correct=is_correct,
+            error_message=None,
             comparison_method="pdf_hash"
         )
     
-    # Compare hashes
-    is_correct = model_hash == target_hash
-    
-    return EvaluateResult(
-        model_render_result=model_render_result,
-        target_render_result=target_render_result,
-        is_correct=is_correct,
-        comparison_method="pdf_hash"
-    )
+    else:
+        raise ValueError(f"Unknown evaluation method: {comparison_method}")
 
 
 class TypstBenchEvaluator:
@@ -152,66 +139,24 @@ class TypstBenchEvaluator:
         dataset: TypstBenchDataset,
         model: str,
         api_key: Optional[str] = None,
-        output_dir: str = "results",
         artifacts_dir: str = "pdf_artifacts",
         prompt_template: str = "Task type: {task_type}\nTask:\n{input}",
         max_concurrent_requests: int = 5
     ):
         """
         Initialize the evaluator.
-
-        Args:
-            dataset: The TypstBench dataset
-            model: The LLM model identifier to use with LiteLLM
-            api_key: API key for the model provider (if required)
-            output_dir: Directory to save evaluation results
-            prompt_template: Template string for formatting prompts
         """
+
         self.dataset = dataset
         self.model = model
-        self.output_dir = output_dir
         self.prompt_template = prompt_template
         self.artifacts_dir = artifacts_dir
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
 
-        # Set up API key if provided
-        if api_key:
-            if "openai" in model.lower():
-                os.environ["OPENAI_API_KEY"] = api_key
-            elif "anthropic" in model.lower():
-                os.environ["ANTHROPIC_API_KEY"] = api_key
-            else:
-                # For other providers, let litellm handle it
-                litellm.api_key = api_key
 
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(artifacts_dir, exist_ok=True)
-
-    def _format_prompt(self, sample: TypstBenchSample) -> str:
-        """Format the prompt for a sample using the prompt template."""
-        return self.prompt_template.format(task_type=sample.category, input=sample.raw_input)
-
-    async def _evaluate_sample(self, sample: TypstBenchSample) -> Dict[str, Any]:
-        """
-        Evaluate a single sample using the LLM.
-
-        Args:
-            sample: The sample to evaluate
-
-        Returns:
-            A dictionary with evaluation results
-        """
-        async with self.semaphore:
-            prompt = self._format_prompt(sample)
-            start_time = time.time()
-
-            try:
-                response = await litellm.acompletion(
-                    model=self.model,
-                    messages=[
-                        {
-                        "role": "system", "content": """
+        # MODEL SETTINGS
+        self.TEMPERATURE = 0.1
+        self.SYSTEM_PROMPT = """
 This is the TypstBench evaluation system. You are being tested on your ability to generate typst code and knowledge of typst.
 You are given two types of tasks:
 
@@ -232,11 +177,46 @@ If two are correct, answer with the letters of the correct options separated by 
 Example answer:
 A,B
 """
-                        },
-                        {
-                            "role": "user", "content": prompt
-                        }],
-                    temperature=0.1,  # Low temperature for more consistent outputs
+
+        # Set up API key if provided
+        if api_key:
+            if "openai" in model.lower():
+                os.environ["OPENAI_API_KEY"] = api_key
+            elif "anthropic" in model.lower():
+                os.environ["ANTHROPIC_API_KEY"] = api_key
+            else:
+                # For other providers, let litellm handle it
+                litellm.api_key = api_key
+
+        # Create output directory if it doesn't exist
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+    def _format_prompt(self, sample: TypstBenchSample) -> str:
+        """Format the prompt for a sample using the prompt template."""
+        return self.prompt_template.format(task_type=sample.category, input=sample.raw_input)
+
+    async def _evaluate_sample(self, sample: TypstBenchSample) -> EvaluateTaskResult:
+        """
+        Evaluate a single sample using the LLM.
+
+        Args:
+            sample: The sample to evaluate
+
+        Returns:
+            A dictionary with evaluation results
+        """
+        async with self.semaphore:
+            prompt = self._format_prompt(sample)
+            start_time = time.time()
+
+            try:
+                response = await litellm.acompletion(
+                    model=self.model,
+                    messages=[
+                        { "role": "system", "content": self.SYSTEM_PROMPT},
+                        { "role": "user", "content": prompt}
+                        ],
+                    temperature=self.TEMPERATURE,  # Low temperature for more consistent outputs
                     max_tokens=1024,
                 )
 
@@ -247,52 +227,42 @@ A,B
                 assert content
 
                 model_output = content.strip()
-                
-                if sample.evaluation_method == EvaluationMethod.PDF_HASH:
-                    sample_artifacts_dir = Path(sample.get_path("pdf_artifacts")).parent.absolute()
-                    eval_result = evaluate_output(
-                        model_output, 
-                        sample.raw_ground_truth,
-                        save_dir=sample_artifacts_dir,
-                        task_path=sample.file_path
-                    )
-                else:
-                    is_correct = model_output == sample.raw_ground_truth
-                    eval_result = EvaluateResult(
-                        model_render_result=None,
-                        target_render_result=None,
-                        is_correct=is_correct,
-                        comparison_method="string_match"
-                    )
 
-                result = {
-                    "task": sample.file_path,
-                    "prompt": prompt,
-                    "expected_output": sample.raw_ground_truth,
-                    "model_output": model_output,
-                    "is_correct": eval_result.is_correct,
-                    "latency_seconds": time.time() - start_time,
-                    "model": self.model,
-                    "metadata": sample.metadata,
-                    "eval_result": eval_result.to_dict(),
-                    "model_pdf_path": getattr(eval_result.model_render_result, "persistent_pdf_path", None),
-                    "target_pdf_path": getattr(eval_result.target_render_result, "persistent_pdf_path", None),
-                }
+                comparison_result = compare_outputs(
+                    model_output,
+                    sample.raw_ground_truth,
+                    sample.evaluation_method,
+                    debug_artificts_dir=Path(self.artifacts_dir) / sample.category / sample.task_number
+                )
 
-                return result
+                return EvaluateTaskResult(
+                    task=sample.file_path,
+                    prompt=prompt,
+                    expected_output=sample.raw_ground_truth,
+                    model_output=model_output,
+                    is_correct=comparison_result["is_correct"],
+                    latency_seconds=time.time() - start_time,
+                    model=self.model,
+                    metadata=sample.metadata,
+                    comparison_result=comparison_result,
+                )
 
             except Exception as e:
-                return {
-                    "task": sample.file_path,
-                    "prompt": prompt,
-                    "expected_output": sample.raw_ground_truth,
-                    "model_output": None,
-                    "is_correct": False,
-                    "error": str(e),
-                    "latency_seconds": time.time() - start_time,
-                    "model": self.model,
-                    "metadata": sample.metadata,
-                }
+                return EvaluateTaskResult(
+                    task=sample.file_path,
+                    prompt=prompt,
+                    expected_output=sample.raw_ground_truth,
+                    model_output="",
+                    is_correct=False,
+                    latency_seconds=time.time() - start_time,
+                    model=self.model,
+                    metadata=sample.metadata,
+                    comparison_result={
+                        "is_correct": False,
+                        "error_message": str(e),
+                        "comparison_method": "error"
+                    }
+                )
 
     async def evaluate_samples(self, samples: List[TypstBenchSample]) -> List[Dict[str, Any]]:
         """
@@ -311,7 +281,7 @@ A,B
         self,
         filter_kwargs: Optional[Dict[str, Any]] = None,
         max_samples: Optional[int] = None
-    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    ) -> EvaluationRunResults:
         """
         Evaluate samples from the dataset with optional filtering.
 
@@ -390,56 +360,22 @@ A,B
             "tier_metrics": tier_metrics,
             "feature_metrics": feature_metrics,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "system_prompt": self.SYSTEM_PROMPT,
+            "temperature": self.TEMPERATURE,
         }
 
-        return summary, results
+        return EvaluationRunResults(
+            summary=summary,
+            results_per_task=results,
+        )
 
     async def run_evaluation(
         self,
         filter_kwargs: Optional[Dict[str, Any]] = None,
         max_samples: Optional[int] = None
-    ) -> str:
-        """
-        Run evaluation and save results to file.
-
-        Args:
-            filter_kwargs: Arguments to filter samples
-            max_samples: Maximum number of samples to evaluate
-
-        Returns:
-            Path to the saved results file
-        """
-        summary, results = await self.evaluate_dataset(filter_kwargs, max_samples)
-
-        # Create result object with both summary and detailed results
-        evaluation_result = {
-            "summary": summary,
-            "detailed_results": results
-        }
-
-        # Save results to file
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        model_name = self.model.replace("/", "-").replace(":", "-")
-        filename = f"typstbench_{model_name}_{timestamp}.json"
-        filepath = os.path.join(self.output_dir, filename)
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(evaluation_result, f, indent=2)
-
-        print(f"Results saved to: {filepath}")
-
-        # Print summary to console
-        print("\nEvaluation Summary:")
-        print(f"Model: {summary['model']}")
-        print(f"Overall Accuracy: {summary['overall_accuracy']:.2%} ({summary['correct_samples']}/{summary['total_samples']})")
-        print(f"Average Latency: {summary['average_latency_seconds']:.2f} seconds")
-
-        if summary['tier_metrics']:
-            print("\nAccuracy by Tier:")
-            for tier, metrics in summary['tier_metrics'].items():
-                print(f"  {tier}: {metrics['accuracy']:.2%} ({metrics['correct']}/{metrics['total']})")
-
-        return filepath
+    ) -> EvaluationRunResults:
+        
+        return await self.evaluate_dataset(filter_kwargs, max_samples)
 
 
 async def main():
@@ -474,22 +410,46 @@ async def main():
         filter_kwargs["category"] = category
         filter_kwargs["task_number"] = task_number
 
-    
+    timestamp = time.strftime("%Y_%m_%d-%H_%M_%S")
+    model_name = args.model.replace("/", "_").replace(":", "_")
+    model_timestamp = f"{model_name}-{timestamp}"
+    results_dir = Path(args.output_dir) / model_timestamp
+    os.makedirs(results_dir, exist_ok=True)
 
     # Initialize evaluator
     evaluator = TypstBenchEvaluator(
         dataset=dataset,
         model=args.model,
         api_key=args.api_key,
-        output_dir=args.output_dir,
         max_concurrent_requests=args.concurrency,
+        artifacts_dir=results_dir,
     )
 
     # Run evaluation
-    await evaluator.run_evaluation(
+    eval_results = await evaluator.run_evaluation(
         filter_kwargs=filter_kwargs if filter_kwargs else None,
         max_samples=args.max_samples
     )
+
+    results_file = results_dir / "results.json"
+    
+
+    with open(results_file, "w", encoding="utf-8") as f:
+        json.dump(eval_results, f, indent=2)
+
+    print(f"Results saved to: {results_file}")
+
+    summary = eval_results["summary"]
+    # Print summary to console
+    print("\nEvaluation Summary:")
+    print(f"Model: {summary['model']}")
+    print(f"Overall Accuracy: {summary['overall_accuracy']:.2%} ({summary['correct_samples']}/{summary['total_samples']})")
+    print(f"Average Latency: {summary['average_latency_seconds']:.2f} seconds")
+
+    if summary['tier_metrics']:
+        print("\nAccuracy by Tier:")
+        for tier, metrics in summary['tier_metrics'].items():
+            print(f"  {tier}: {metrics['accuracy']:.2%} ({metrics['correct']}/{metrics['total']})")
 
 
 if __name__ == "__main__":
