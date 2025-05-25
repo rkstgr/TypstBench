@@ -27,8 +27,19 @@ brew install typst
 | GPT-4.1                        |     19.57% |
 | GPT-4.1-Mini                   |      4.35% |
 
-- 46 tasks
-- image_similarity
+46 tasks, metric: image_similarity
+
+**Feature categories covered:**
+- [x] Page setup: headings, outlines, page breaks
+- [x] Tables: basic tables, styling, merging, lines, alignment
+- [x] Text: basic text, styling, alignment, spacing
+- [ ] Layout: page, margins, columns, alignment, spacing
+- [ ] Math: equations, fractions, matrices, symbols, formatting
+- [ ] Figures: images, captions, placement, references
+- [ ] Lists: bullet lists, numbered lists, term lists
+- [ ] References: labels, citations, cross-references
+- [ ] Styling: show rules, set rules, custom functions
+
 
 ## Statistics
 
@@ -72,3 +83,7 @@ python evaluate.py --model gpt-4 --features math --max-samples 5
 # Reduce the concurrency
 python evaluate.py --model anthropic/claude-3-5-haiku-20241022 --concurrency 2
 ```
+
+# TODO
+- claude-3.5-haiku new default
+- eval and check tasks 037-051
