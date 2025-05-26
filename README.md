@@ -18,16 +18,19 @@ brew install typst
 
 ## Preliminary Findings
 
+61 tasks, using image_similarity metric where applicable
+
 | Model                          |   Accuracy |
 |--------------------------------|------------|
-| Claude 3.7 Sonnet              |     43.48% |
-| Gemini 2.5 Pro                 |     36.96% |
-| Gemini 2.5 Flash               |     34.78% |
-| Claude 3.5 Haiku               |     30.43% |
-| GPT-4.1                        |     19.57% |
-| GPT-4.1-Mini                   |      4.35% |
+| Claude 4 Sonnet                |     70.49% |
+| Claude 3.7 Sonnet              |     45.90% |
+| Gemini 2.5 Pro                 |     36.07% |
+| Gemini 2.5 Flash               |     34.43% |
+| Claude 3.5 Haiku               |     29.51% |
+| GPT-4.1                        |     19.67% |
+| GPT-4.1-Mini                   |      8.20% |
 
-46 tasks, metric: image_similarity
+_Note: The eval numbers change as tasks are continuously added._
 
 **Feature categories covered:**
 - [x] Page setup: headings, outlines, page breaks
@@ -86,5 +89,3 @@ python evaluate.py --model anthropic/claude-3-5-haiku-20241022 --concurrency 2
 # Evaluate and check tasks 037-051
 python evaluate.py --model anthropic/claude-3-5-haiku-20241022 --tasks generate/37-51
 ```
-
-
