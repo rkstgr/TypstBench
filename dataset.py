@@ -40,7 +40,7 @@ class TypstBenchSample:
 
     def __repr__(self) -> str:
         return f"TypstBenchSample({self.file_path})"
-    
+
     @property
     def task_number(self) -> str:
         """Extract task number from the file path."""
@@ -62,14 +62,14 @@ class TypstBenchSample:
             "file_path": self.file_path,
             "comparison_method": self.comparison_method
         }
-    
+
     def get_typst_code(self) -> Optional[str]:
         return get_typst_code(self.raw_ground_truth)
 
     def verify(self, renderer: Optional[TypstRenderer] = None) -> Tuple[int, Optional[str]]:
         if self.ignore_verify:
             return VerifyResult.IGNORED, None
-        
+
         # For string match or image similarity, we don't need to compile the ground truth during dataset verification
         # as it might not be valid Typst code (e.g. for multiple_choice) or we care about visual output.
         # The actual compilation will happen during evaluation.
@@ -91,20 +91,20 @@ class TypstBenchSample:
 
         if renderer is None:
             renderer = TypstRenderer()
-        
+
         render_result = renderer.render(typst_code_to_verify)
-        
+
         # Clean up temporary files created by render method if they exist
-        if render_result.get("typst_file") and os.path.exists(render_result["typst_file"]):
-            os.remove(render_result["typst_file"])
-        if render_result.get("pdf_path") and os.path.exists(render_result["pdf_path"]):
-            os.remove(render_result["pdf_path"])
-            
-        if render_result["success"]:    
+        if render_result.get("typst_file") and os.path.exists(str(render_result["typst_file"])):
+            os.remove(str(render_result["typst_file"]))
+        if render_result.get("pdf_path") and os.path.exists(str(render_result["pdf_path"])):
+            os.remove(str(render_result["pdf_path"]))
+
+        if render_result["success"]:
             return VerifyResult.SUCCESS, None
         else:
             return VerifyResult.FAILURE, render_result["error_output"]
-        
+
 
 class TypstBenchDataset:
     """Loader for the TypstBench dataset."""
@@ -118,7 +118,7 @@ class TypstBenchDataset:
             base_dir: Base directory containing the dataset files
         """
         self.base_dir = base_dir
-        self.samples: list[TypstBenchSample] = []
+        self.samples = []
         self._load_dataset()
 
     def _parse_sample_file(self, file_path: str) -> Optional[TypstBenchSample]:
@@ -159,9 +159,11 @@ class TypstBenchDataset:
             raw_input = parts[1].strip()
             raw_ground_truth = parts[2].strip()
 
+            # pyrefly: ignore
             ignore_verify = metadata.get("ignore_verify", ignore_verify)
 
             # Determine evaluation method from metadata, defaulting based on category or to PDF_HASH
+            # pyrefly: ignore
             comparison_method_str = metadata.get("comparison_method", None)
             if comparison_method_str:
                 if comparison_method_str == "pdf_hash":
@@ -247,6 +249,22 @@ class TypstBenchDataset:
                     filtered = [s for s in filtered if value in s.metadata.get('features', [])]
             elif key == 'comparison_method':
                  filtered = [s for s in filtered if s.comparison_method == value]
+            elif key == 'task_numbers':
+                # Handle list of task numbers with flexible matching (zero-padding)
+                def matches_any_task_number(sample_task_number, requested_numbers):
+                    for req_num in requested_numbers:
+                        # Try exact match first
+                        if sample_task_number == req_num:
+                            return True
+                        # Try converting both to int for zero-padding tolerance
+                        try:
+                            if int(sample_task_number) == int(req_num):
+                                return True
+                        except ValueError:
+                            continue
+                    return False
+
+                filtered = [s for s in filtered if matches_any_task_number(s.task_number, value)]
             else:
                 # Generic filter for other metadata fields
                 filtered = [s for s in filtered if s.metadata.get(key) == value]
@@ -277,7 +295,7 @@ class TypstBenchDataset:
             # Count features
             for feature in sample.metadata.get('features', []):
                 features[feature] = features.get(feature, 0) + 1
-            
+
             # Count evaluation methods
             comparison_methods[sample.comparison_method] = comparison_methods.get(sample.comparison_method, 0) + 1
 
@@ -316,15 +334,15 @@ class TypstBenchDataset:
             },
             "samples": [sample.to_dict() for sample in self.samples]
         }
-    
+
     def to_jsonl(self, output_path: str, indent: Optional[int] = None) -> None:
         """
         Save the dataset to a JSONL (JSON Lines) file.
-        
+
         Args:
             output_path: Path where the JSONL file will be saved
             indent: Optional indentation for JSON formatting (None for compact format)
-            
+
         Returns:
             None
         """
@@ -334,7 +352,7 @@ class TypstBenchDataset:
                     # Convert each sample to a dictionary and write as a JSON line
                     json_str = json.dumps(sample.to_dict(), ensure_ascii=False, indent=indent)
                     f.write(json_str + '\n')
-            
+
             print(f"Dataset saved to {output_path} with {len(self.samples)} samples")
         except Exception as e:
             print(f"Error saving dataset to JSONL: {e}")
@@ -354,7 +372,7 @@ class DatasetStats:
         self.categories = categories if categories else {}
         self.features = features if features else {}
         self.comparison_methods = comparison_methods if comparison_methods else {}
-    
+
     def __repr__(self) -> str:
         return (f"DatasetStats(root_dir={self.root_dir}, total_tasks={self.total_tasks}, "
                 f"categories={self.categories}, features={self.features}, comparison_methods={self.comparison_methods})")
@@ -368,7 +386,7 @@ class DatasetStats:
             "features": self.features,
             "comparison_methods": self.comparison_methods
         }
-    
+
     # terminal output
     def print_stats(self) -> None:
         """Print the dataset statistics."""
@@ -381,7 +399,7 @@ class DatasetStats:
         print("Evaluation Methods:")
         for method, count in self.comparison_methods.items():
             print(f"  {method}: {count}")
-        
+
 
 def main():
     import argparse
@@ -428,7 +446,7 @@ def main():
         print(f"Ignored: {ignored_count}")
         print(f"Success: {success_count}")
         print(f"Failure: {failure_count}")
-        
+
         if failure_count > 0:
             print("\nFailures:")
             for file_path, result_code, error_msg in results:
@@ -488,7 +506,7 @@ def main():
                 if result.get("typst_file") and os.path.exists(result["typst_file"]):
                     os.remove(result["typst_file"])
                 continue
-            
+
             # Clean up temporary .typ file created by renderer on success
             if result.get("typst_file") and os.path.exists(result["typst_file"]):
                  os.remove(result["typst_file"])

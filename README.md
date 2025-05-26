@@ -71,7 +71,7 @@ python dataset.py render --all
 
 Evaluate an external model using LiteLLM against all samples. I would advise creating a local .envrc file containing the API keys to the LLM providers.
 ```sh
-# Basic usage with OpenAI GPT-3.5
+# Basic usage with OpenAI GPT-3.5, evaluates all tasks
 python evaluate.py --model gpt-3.5-turbo --api-key your_openai_key
 
 # Evaluate with Claude on basic tier samples only
@@ -82,8 +82,9 @@ python evaluate.py --model gpt-4 --features math --max-samples 5
 
 # Reduce the concurrency
 python evaluate.py --model anthropic/claude-3-5-haiku-20241022 --concurrency 2
+
+# Evaluate and check tasks 037-051
+python evaluate.py --model anthropic/claude-3-5-haiku-20241022 --tasks generate/37-51
 ```
 
-# TODO
-- claude-3.5-haiku new default
-- eval and check tasks 037-051
+

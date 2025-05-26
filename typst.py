@@ -9,37 +9,43 @@ import uuid
 def get_typst_code(raw_input: str) -> Optional[str]:
     """
     Extract Typst code from a markup-style code block.
-    
+
     From raw text that contains:
     ```typst
     <returns this part>
     ```
-    
+
     Args:
         raw_text: The raw text containing potential code blocks
-        
+
     Returns:
         The extracted Typst code or None if no valid code block is found
     """
     if not raw_input:
         return None
-    
+
+    # if first row is ```typ(st) and last row is ````, take everything in between
+    if raw_input.startswith('```typ') and raw_input.endswith('```'):
+        # get everything after the first newline, and strip the last three ticks
+        return raw_input.split('\n', 1)[1].rstrip('```')
+
+
     # Pattern to match code blocks with various fences and language specifiers
     patterns = [
         # Standard markup with explicit typst language tag
         r'```(?:typst|typ)\s*\n([\s\S]*?)\n```',
-        
+
         # Alternative backtick count (3 or more)
         r'````(?:typst|typ)?\s*\n([\s\S]*?)\n````',
         r'`````(?:typst|typ)?\s*\n([\s\S]*?)\n`````',
-        
+
         # Code blocks without language specification
         r'```\s*\n([\s\S]*?)\n```',
-        
+
         # Fallback to the whole text if no code block found
         r'^([\s\S]*)$'
     ]
-    
+
     # Try each pattern in order of preference
     for pattern in patterns:
         import re
@@ -47,7 +53,7 @@ def get_typst_code(raw_input: str) -> Optional[str]:
         if matches:
             # Return the first match
             return matches[0].strip()
-    
+
     # If no matches were found with any pattern
     return None
 
@@ -266,7 +272,7 @@ class TypstRenderer:
                 errors=[TypstError(line=0, column=0, message=str(e))],
                 typst_file=typ_path,
             )
-    
+
     def render_sample(
         self, sample_output: str, output_dir: Optional[str] = None
     ) -> TypstRenderResult:

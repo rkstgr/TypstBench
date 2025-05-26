@@ -8,11 +8,10 @@ import hashlib
 from typing import Dict, List, Any, Optional, Tuple, TypedDict
 import litellm
 from litellm.types.utils import ModelResponse, Choices
-from dataset import ComparisonMethod, TypstBenchDataset, TypstBenchSample # ComparisonMethod imported
+from dataset import ComparisonMethod, TypstBenchDataset, TypstBenchSample
 from typst import TypstRenderer, get_typst_code
-import subprocess # Added
-import shutil # Added
-import tempfile # Added
+import subprocess
+import shutil
 
 # --- Constants for Image Similarity ---
 IMAGE_SIMILARITY_METRIC = "AE"  # Absolute Error (count of different pixels)
@@ -104,12 +103,12 @@ def _run_imagemagick_compare(
 
     try:
         process = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        
+
         # ImageMagick `compare -metric AE` outputs the difference to stderr.
         # Return code 0 means images are similar (within fuzz).
         # Return code 1 means images are different.
         # Return code >1 means an error occurred.
-        
+
         stderr_output = process.stderr.strip()
         pixel_difference: Optional[int] = None
 
@@ -146,7 +145,7 @@ def compare_outputs(model_output: str,
             error_message=None,
             comparison_method=ComparisonMethod.STRING_MATCH
         )
-    
+
     elif comparison_method == ComparisonMethod.PDF_HASH:
         # --- Model PDF Rendering for Hash ---
         model_typst_code = get_typst_code(model_output)
@@ -156,7 +155,7 @@ def compare_outputs(model_output: str,
                 error_message="Model output is not valid Typst code",
                 comparison_method="compile_check_model_hash" # More specific
             )
-        
+
         # For PDF hash, we always use temporary files for rendering, then hash.
         # Debug artifacts dir is only for saving the model's PDF if hashes don't match.
         renderer = TypstRenderer()
@@ -172,7 +171,7 @@ def compare_outputs(model_output: str,
                 error_message=f"Model output failed to render for PDF hash: {model_render_result.get('error_output', 'Unknown error')}",
                 comparison_method=ComparisonMethod.PDF_HASH
             )
-        
+
         actual_model_pdf_path = Path(model_render_result["pdf_path"])
         actual_model_typ_path = Path(model_render_result["typst_file"])
 
@@ -186,7 +185,7 @@ def compare_outputs(model_output: str,
                 error_message="Target output is not valid Typst code for PDF hash",
                 comparison_method="dataset_error_target_hash" # More specific
             )
-        
+
         target_render_result = renderer.render(target_typst_code) # Renders to temp PDF
         if not target_render_result["success"]:
             if os.path.exists(actual_model_pdf_path): os.remove(actual_model_pdf_path)
@@ -200,7 +199,7 @@ def compare_outputs(model_output: str,
                 error_message=f"Target output failed to render for PDF hash: {target_render_result.get('error_output', 'Unknown error')}",
                 comparison_method=ComparisonMethod.PDF_HASH
             )
-        
+
         actual_target_pdf_path = Path(target_render_result["pdf_path"])
         actual_target_typ_path = Path(target_render_result["typst_file"])
 
@@ -213,14 +212,14 @@ def compare_outputs(model_output: str,
         if os.path.exists(actual_model_typ_path): os.remove(actual_model_typ_path)
         if os.path.exists(actual_target_pdf_path): os.remove(actual_target_pdf_path)
         if os.path.exists(actual_target_typ_path): os.remove(actual_target_typ_path)
-        
+
         if not model_hash or not target_hash:
             return ComparisonResult(
                 is_correct=False,
                 error_message="Failed to calculate PDF hash (PDFs were temporary and are now deleted).",
                 comparison_method=ComparisonMethod.PDF_HASH
             )
-        
+
         is_correct = model_hash == target_hash
         error_msg_hash = None
         if not is_correct and debug_artifacts_dir:
@@ -232,7 +231,7 @@ def compare_outputs(model_output: str,
             error_msg_hash = f"PDF hashes do not match. Model output saved to: {str(debug_model_pdf_path)}"
         elif not is_correct:
             error_msg_hash = "PDF hashes do not match."
-            
+
         return ComparisonResult(
             is_correct=is_correct,
             error_message=error_msg_hash,
@@ -258,7 +257,7 @@ def compare_outputs(model_output: str,
             return ComparisonResult(is_correct=False, error_message="Target output (ground truth) is not valid Typst code for image comparison.", comparison_method="dataset_error_target_img")
 
         renderer = TypstRenderer()
-        
+
         # Paths for PDFs and TYPs from renderer
         # These will be populated by the render calls
         rendered_model_pdf_path: Optional[Path] = None
@@ -271,7 +270,7 @@ def compare_outputs(model_output: str,
         # If None, renderer makes them temporary.
         _model_pdf_render_path: Optional[str] = None
         _target_pdf_render_path: Optional[str] = None
-        
+
         # Also save .typ files to debug_artifacts_dir if it's provided
         _model_typ_debug_path: Optional[Path] = None
         _target_typ_debug_path: Optional[Path] = None
@@ -283,7 +282,7 @@ def compare_outputs(model_output: str,
             _target_pdf_render_path = str(debug_artifacts_dir / "target_output.pdf")
             _model_typ_debug_path = debug_artifacts_dir / "model_output.typ"
             _target_typ_debug_path = debug_artifacts_dir / "target_output.typ"
-            
+
             with open(_model_typ_debug_path, "w", encoding="utf-8") as f:
                 f.write(model_typst_code)
             with open(_target_typ_debug_path, "w", encoding="utf-8") as f:
@@ -353,7 +352,7 @@ def compare_outputs(model_output: str,
                     # If a diff image was created in debug_artifacts_dir but images are correct, remove it.
                     if diff_image_file_path_str and os.path.exists(diff_image_file_path_str):
                         os.remove(diff_image_file_path_str)
-            
+
             return ComparisonResult(
                 is_correct=is_correct,
                 error_message=final_error_message,
@@ -380,7 +379,7 @@ def compare_outputs(model_output: str,
             if rendered_target_typ_path and os.path.exists(rendered_target_typ_path):
                 if not (_target_typ_debug_path and Path(rendered_target_typ_path) == _target_typ_debug_path):
                     os.remove(rendered_target_typ_path)
-    
+
     else:
         raise ValueError(f"Unknown comparison method: {comparison_method}")
 
@@ -402,16 +401,16 @@ class TypstBenchEvaluator:
         self.prompt_template = prompt_template
         # artifacts_dir is the base for this evaluation run's artifacts
         # debug_artifacts_dir for compare_outputs will be a subfolder per sample
-        self.artifacts_dir = Path(artifacts_dir) 
+        self.artifacts_dir = Path(artifacts_dir)
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
 
         self.TEMPERATURE = 0.1
         self.SYSTEM_PROMPT = """
 This is the TypstBench evaluation system. You are being tested on your ability to generate typst code and knowledge of typst.
-You are given two types of tasks:
+You are given these types of tasks:
 
 - generate: Generate typst code based on the input.
-Your answer should be a single typst code block.
+Your answer should be a single typst code block. Do not include any text or comments outside of the code block, and don't explain your answer.
 Example answer:
 ```typst
 <typst code here>
@@ -426,6 +425,13 @@ A
 If two are correct, answer with the letters of the correct options separated by a comma.
 Example answer:
 A,B
+
+- fix: Fix the typst code provided.
+You should fix the typst code provided and return the fixed code.
+Example answer:
+```typst
+<fixed typst code here>
+```
 """
 
         # Set up API key if provided
@@ -497,8 +503,8 @@ A,B
             except Exception as e:
                 # Ensure comparison_result structure is consistent on error
                 error_comparison_result = ComparisonResult(
-                    is_correct=False, 
-                    error_message=str(e), 
+                    is_correct=False,
+                    error_message=str(e),
                     comparison_method="evaluation_error"
                 )
                 return EvaluateTaskResult(
@@ -574,7 +580,7 @@ A,B
             features_list = r["metadata"].get("features", [])
             if isinstance(features_list, list): # Ensure it's a list
                 all_features.update(f for f in features_list if f is not None)
-        
+
         sorted_features = sorted(list(all_features))
 
         for feature_value in sorted_features:
@@ -587,7 +593,7 @@ A,B
                 "correct": feature_correct,
                 "accuracy": feature_accuracy
             }
-        
+
         summary_data = EvaluationRunSummary(
             model=self.model,
             total_samples=total,
@@ -610,10 +616,40 @@ A,B
     ) -> EvaluationRunResults:
         return await self.evaluate_dataset(filter_kwargs, max_samples)
 
+def parse_task_specification(task_arg) -> Tuple[str, List[int]]:
+    """Parse task argument supporting ranges and lists"""
+    category, task_spec = task_arg.split("/", 1)
+    task_numbers = []
+
+    # Split by commas first (handles lists and mixed)
+    for part in task_spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            # Handle range: "15-37"
+            start_str, end_str = part.split("-", 1)
+            start_num = int(start_str.strip())
+            end_num = int(end_str.strip())
+            if start_num > end_num:
+                raise ValueError(f"Invalid range: {start_num}-{end_num}")
+            task_numbers.extend(range(start_num, end_num + 1))
+        else:
+            # Handle single number: "15"
+            task_numbers.append(int(part))
+
+    # Convert to strings and remove duplicates while preserving order
+    seen = set()
+    unique_task_numbers = []
+    for num in task_numbers:
+        num_str = str(num)
+        if num_str not in seen:
+            seen.add(num_str)
+            unique_task_numbers.append(num_str)
+
+    return category, unique_task_numbers
 
 async def main():
     parser = argparse.ArgumentParser(description="Evaluate LLMs on the TypstBench dataset")
-    parser.add_argument("--model", default="gpt-3.5-turbo", help="LLM model identifier for litellm")
+    parser.add_argument("--model", default="claude-3-5-haiku-20241022", help="LLM model identifier for litellm")
     parser.add_argument("--api-key", help="API key for the model provider (optional, can be set via ENV VARS)")
     parser.add_argument("--dataset-dir", default="dataset", help="Directory containing the dataset")
     parser.add_argument("--output-dir", default="results", help="Directory to save results")
@@ -622,8 +658,8 @@ async def main():
     parser.add_argument("--features", help="Filter samples by features (comma-separated)")
     parser.add_argument("--max-samples", type=int, help="Maximum number of samples to evaluate")
     parser.add_argument("--concurrency", type=int, default=5, help="Maximum concurrent requests")
-    parser.add_argument("--task", help="Path to a specific task to evaluate (e.g. basic_elements/001.md or category/task_number like multiple_choice/001)")
-    
+    parser.add_argument("--task", help="Path to a specific task to evaluate (e.g. basic_elements/001 or category/task_number like multiple_choice/001)")
+
 
     args = parser.parse_args()
 
@@ -632,15 +668,13 @@ async def main():
     if args.category: filter_kwargs["category"] = args.category
     if args.tier: filter_kwargs["tier"] = args.tier
     if args.features: filter_kwargs["features"] = args.features.split(",")
-    
+
     if args.task:
-        # Allow task to be specified as "category/task_number" or "category/task_file.md"
-        task_parts = args.task.split("/")
-        if len(task_parts) == 2:
-            filter_kwargs["category"] = task_parts[0]
-            filter_kwargs["task_number"] = task_parts[1].split('.')[0] # Get number before .md
-        else:
-            print(f"Warning: Invalid task format '{args.task}'. Expected 'category/task_number' or 'category/task_file.md'.")
+        category, task_numbers = parse_task_specification(args.task)
+        if category is None or task_numbers is None:
+            raise ValueError(f"Invalid task specification: {args.task}")
+        filter_kwargs["category"] = category
+        filter_kwargs["task_numbers"] = task_numbers
 
 
     # --- Output Directory Setup ---
@@ -649,10 +683,10 @@ async def main():
     timestamp_str = time.strftime("%Y%m%d-%H%M%S")
     # Results will be stored in: output_dir / safe_model_name / timestamp_str
     # Artifacts for a run will be in: output_dir / safe_model_name / timestamp_str / artifacts / category / task_num / ...
-    
+
     run_results_base_dir = Path(args.output_dir) / safe_model_name / timestamp_str
     run_artifacts_dir = run_results_base_dir / "artifacts" # Specific subdir for PDF/PNG artifacts
-    
+
     os.makedirs(run_results_base_dir, exist_ok=True)
     # run_artifacts_dir will be created by TypstBenchEvaluator or by compare_outputs if needed
 
@@ -687,7 +721,7 @@ async def main():
         print("\nAccuracy by Tier:")
         for tier_name, metrics in summary['tier_metrics'].items():
             print(f"  {tier_name}: {metrics['accuracy']:.2%} ({metrics['correct']}/{metrics['total']})")
-    
+
     if summary['feature_metrics']:
         print("\nAccuracy by Feature:")
         for feature_name, metrics in summary['feature_metrics'].items():
